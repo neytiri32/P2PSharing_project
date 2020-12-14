@@ -1,13 +1,18 @@
 package tracker;
 
 import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.OutputStream;
+import java.io.RandomAccessFile;
 import java.math.BigInteger;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -25,9 +30,8 @@ public class Tracker {
 	// activeClients is hashMap that contains Clients in shape:
 	// <uniqueID, address:port>
 	Map<String, String> activeClients = new HashMap<String, String>();
-	ArrayList<String> sharingFiles = new ArrayList<String>();
+	Map<String, Torrent> sharedTorrents = new HashMap<String, Torrent>();
 	List<String> seeds = new ArrayList<String>();
-	Map<String, String> sharedSummaries = new HashMap<String, String>();
 
 	private static SecureRandom random = new SecureRandom();
 
@@ -58,7 +62,57 @@ public class Tracker {
 
 	}
 
-	private void initialTalk(DataOutputStream dOut, DataInputStream dIn, String uID) throws IOException {
+	private File allocateFileMemory(final String filename, final long sizeInBytes) throws IOException {
+		File file = new File(filename);
+		file.createNewFile();
+
+		RandomAccessFile raf = new RandomAccessFile(file, "rw");
+		raf.setLength(sizeInBytes);
+		raf.close();
+
+		return file;
+	}
+	
+	public void getFile(Socket socket, String path, int filesize, Torrent summary) throws Exception {
+
+		int bytesRead;
+		int currentTot = 0;
+
+		byte[] bytearray = new byte[filesize];
+		InputStream is = socket.getInputStream();
+
+		// allocate memory
+		File fo = allocateFileMemory(path, filesize);
+		BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(fo));
+
+		bytesRead = is.read(bytearray, 0, bytearray.length);
+
+		currentTot = bytesRead; // infinitive
+		do {
+			bytesRead = is.read(bytearray, currentTot, (bytearray.length - currentTot));
+			if (bytesRead >= 0) {
+				currentTot += bytesRead;
+			}
+		} while (bytesRead > 0);
+		bos.write(bytearray, 0, currentTot);
+
+		bos.flush();
+		bos.close();
+
+		// make hash from a file -> compare
+		File file = new File(path);
+
+		Torrent mySummary = new Torrent(file);
+
+		if (!(mySummary.equals(summary))) {
+			System.err.println("File is corrupted!");
+		} else {
+			System.out.println("File is not corrupted.");
+		}
+
+	}
+
+	private boolean isSeed(DataOutputStream dOut, DataInputStream dIn, String uID) throws IOException {
 		// initial talk so the tracker knows do peer want to download or be a seed and add it to right list
 		while (true) {
 			dOut.writeUTF(
@@ -70,22 +124,44 @@ public class Tracker {
 				System.out.println("he wants to be seed");
 				dOut.writeUTF("OK");
 				dOut.flush();
-
-				break;
+				return true;
 			} else if (answer.equals("D")) {
 				System.out.println("he wants to download files");
 				seeds.add(uID);
 				dOut.writeUTF("OK");
 				dOut.flush();
-				break;
+				return false;
 			}
 		}
+	}
+	
+	public void peerShutingDown(Socket socket) {
+		//TODO
+		//delete from activClients
+		//delete maybe from seeds and sharedTorrents (if it is in it)
+		//...
+	}
+	
+	public void reciveFile(Socket socket) throws Exception {
+		//recive file
+		int filesize;
+		Torrent summary = null;
+		String path = "SharingFiles/recivedFile.txt";
+		ArrayList<String> sharingFiles = new ArrayList<String>();
+		sharingFiles.add(path);
+		ObjectInputStream ois = new ObjectInputStream(socket.getInputStream());
+		filesize = (int) ois.readObject();
+		summary = (Torrent) ois.readObject();
+		getFile(socket, path, filesize, summary);
+		
 	}
 	
 	public void runTracker(int port) throws Exception {
 		ServerSocket server = null;
 		Socket socket = null;
 		Scanner in = new Scanner(System.in);
+
+		ObjectInputStream ois = null;
 
 		// creating socket and waiting for client connection
 		try {
@@ -104,15 +180,16 @@ public class Tracker {
 
 					DataOutputStream dOut = new DataOutputStream(socket.getOutputStream());
 					DataInputStream dIn = new DataInputStream(socket.getInputStream());
-					initialTalk(dOut, dIn, uID);
-
-					// send file
-					String path1 = "SharingFiles/article1.txt";
-					String path = "/home/matea/Desktop/new.txt"; // isto je ok
-
-					sharingFiles.add(path);
-
-					shareFile(socket, path);
+					
+					//initial talk, checking is the peer seeder or downloader
+					//if it is sender, save torrent
+					if(isSeed(dOut, dIn, uID)) {
+						//Receive torrent
+						Torrent summary = null;
+						ois = new ObjectInputStream(socket.getInputStream());
+						summary = (Torrent) ois.readObject();
+						sharedTorrents.put(uID, summary);
+					}
 
 				} finally {
 					if (socket != null)

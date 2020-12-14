@@ -1,13 +1,17 @@
 package peers;
 
+import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.OutputStream;
 import java.io.RandomAccessFile;
 import java.net.InetAddress;
 import java.net.Socket;
@@ -31,6 +35,41 @@ public class Peer {
 		return file;
 	}
 
+	public void shareFile(Socket socket, String path) throws Exception {
+		File file = new File(path);
+
+		OutputStream os = socket.getOutputStream();
+		ObjectOutputStream oos = null;
+
+		Torrent summary = new Torrent(file);
+
+		byte[] bytearray = new byte[(int) file.length()];
+		System.out.println("Sending Size...");
+		oos = new ObjectOutputStream(socket.getOutputStream());
+		oos.writeObject(bytearray.length);
+		oos.writeObject(summary);
+
+		BufferedInputStream bin = new BufferedInputStream(new FileInputStream(file));
+		bin.read(bytearray, 0, bytearray.length);
+
+		System.out.println("Sending Files...");
+		os.write(bytearray, 0, bytearray.length);
+		os.flush();
+
+	}
+	
+	public void sendTorrent(Socket socket, String path) throws Exception {
+		File file = new File(path);
+
+		OutputStream os = socket.getOutputStream();
+		ObjectOutputStream oos = null;
+		oos = new ObjectOutputStream(socket.getOutputStream());
+
+		Torrent summary = new Torrent(file);
+		oos.writeObject(summary); 
+		oos.flush();
+	}
+	
 	public void getFile(Socket socket, String path, int filesize, Torrent summary) throws Exception {
 
 		int bytesRead;
@@ -106,19 +145,13 @@ public class Peer {
 			DataInputStream dIn = new DataInputStream(socket.getInputStream());
 			initialTalk(dOut, dIn);
 
-			int filesize;
-			Torrent summary = null;
+			//sendFile
+			String path3 = "/home/matea/Desktop/new.txt"; // isto je ok
+			String path1 = "SharingFiles/article1.txt";
 
-			String path = "SharingFiles/recivedFile.txt";
+			sendTorrent(socket, path1);
+			shareFile(socket, path1);
 
-			ArrayList<String> sharingFiles = new ArrayList<String>();
-			sharingFiles.add(path);
-
-			ois = new ObjectInputStream(socket.getInputStream());
-			filesize = (int) ois.readObject();
-			summary = (Torrent) ois.readObject();
-
-			getFile(socket, path, filesize, summary);
 
 		} finally {
 			if (socket != null)

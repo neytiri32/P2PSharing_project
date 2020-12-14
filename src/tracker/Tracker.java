@@ -24,6 +24,8 @@ public class Tracker {
 	Map<String, String> activeClients = new HashMap<String, String>();
 	ArrayList<String> sharingFiles = new ArrayList<String>();
 	List<String> seeds = new ArrayList<String>();
+	Map<String, String> sharedSummaries = new HashMap<String, String>();
+	
 
 	private static SecureRandom random = new SecureRandom();
 

@@ -1,8 +1,11 @@
 package tracker;
 
 import java.io.BufferedInputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.IOException;
 import java.io.ObjectOutputStream;
 import java.io.OutputStream;
 import java.math.BigInteger;
@@ -25,7 +28,6 @@ public class Tracker {
 	ArrayList<String> sharingFiles = new ArrayList<String>();
 	List<String> seeds = new ArrayList<String>();
 	Map<String, String> sharedSummaries = new HashMap<String, String>();
-	
 
 	private static SecureRandom random = new SecureRandom();
 
@@ -56,9 +58,34 @@ public class Tracker {
 
 	}
 
+	private void initialTalk(DataOutputStream dOut, DataInputStream dIn, String uID) throws IOException {
+		// initial talk so the tracker knows do peer want to download or be a seed and add it to right list
+		while (true) {
+			dOut.writeUTF(
+					"If you want to download files return 'D', else if you want to act as seed return 'S'");
+			dOut.flush();
+
+			String answer = dIn.readUTF();
+			if (answer.equals("S")) {
+				System.out.println("he wants to be seed");
+				dOut.writeUTF("OK");
+				dOut.flush();
+
+				break;
+			} else if (answer.equals("D")) {
+				System.out.println("he wants to download files");
+				seeds.add(uID);
+				dOut.writeUTF("OK");
+				dOut.flush();
+				break;
+			}
+		}
+	}
+	
 	public void runTracker(int port) throws Exception {
 		ServerSocket server = null;
 		Socket socket = null;
+		Scanner in = new Scanner(System.in);
 
 		// creating socket and waiting for client connection
 		try {
@@ -75,17 +102,13 @@ public class Tracker {
 					String uID = getUniqueId();
 					activeClients.put(uID, socket.getPort() + ":" + socket.getInetAddress().getHostAddress());
 
-					if (true) { // Check did he registered as a seed
-						seeds.add(uID);
-					}
+					DataOutputStream dOut = new DataOutputStream(socket.getOutputStream());
+					DataInputStream dIn = new DataInputStream(socket.getInputStream());
+					initialTalk(dOut, dIn, uID);
 
 					// send file
 					String path1 = "SharingFiles/article1.txt";
 					String path = "/home/matea/Desktop/new.txt"; // isto je ok
-
-//					System.out.println("Please write a full path to the file you want to share.\n");
-//					Scanner in = new Scanner(System.in);
-//					String path2 = in.nextLine();
 
 					sharingFiles.add(path);
 

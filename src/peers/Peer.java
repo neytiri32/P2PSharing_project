@@ -1,6 +1,8 @@
 package peers;
 
 import java.io.BufferedOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
@@ -15,6 +17,8 @@ import java.util.Scanner;
 import hash.*;
 
 public class Peer {
+
+	char role; // S == seed; D == downloader
 
 	private File allocateFileMemory(final String filename, final long sizeInBytes) throws IOException {
 		File file = new File(filename);
@@ -66,6 +70,26 @@ public class Peer {
 
 	}
 
+	private void initialTalk(DataOutputStream dOut, DataInputStream dIn) throws IOException {
+		// initial talk so the tracker knows do peer want to download or be a seed
+		String get;
+		String s = "";
+		Scanner in = new Scanner(System.in);
+
+		while (true) {
+			get = dIn.readUTF();
+
+			System.out.println(get);
+			if (get.equals("OK")) {
+				role = s.charAt(0);
+				break;
+			}
+			s = in.nextLine();
+			dOut.writeUTF(s);
+			dOut.flush();
+		}
+	}
+
 	public void runPeer(int port) throws Exception {
 
 		InetAddress host = InetAddress.getLocalHost();
@@ -77,6 +101,10 @@ public class Peer {
 			// establish socket connection to server
 			socket = new Socket(host.getHostName(), port);
 			System.out.println("Connecting...");
+
+			DataOutputStream dOut = new DataOutputStream(socket.getOutputStream());
+			DataInputStream dIn = new DataInputStream(socket.getInputStream());
+			initialTalk(dOut, dIn);
 
 			int filesize;
 			Torrent summary = null;
@@ -91,10 +119,6 @@ public class Peer {
 			summary = (Torrent) ois.readObject();
 
 			getFile(socket, path, filesize, summary);
-
-			Scanner in = new Scanner(System.in);
-			String s = in.nextLine();
-			System.out.println("You entered string " + s);
 
 		} finally {
 			if (socket != null)

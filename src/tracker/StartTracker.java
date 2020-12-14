@@ -1,12 +1,12 @@
-package server;
+package tracker;
 
 import java.io.IOException;
 
-public class StartServer {
+public class StartTracker {
 
 	public static void main(String[] args) throws Exception, IOException, ClassNotFoundException {
-		Server server = new Server();
-		server.runServer(8080);
+		Tracker tracker = new Tracker();
+		tracker.runTracker(8080);
 	}
 
 }

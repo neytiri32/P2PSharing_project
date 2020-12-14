@@ -1,4 +1,4 @@
-package client;
+package peers;
 
 import java.io.BufferedOutputStream;
 import java.io.File;
@@ -10,11 +10,11 @@ import java.io.RandomAccessFile;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.util.ArrayList;
-
+import java.util.Scanner;
 
 import hash.*;
 
-public class Client {
+public class Peer {
 
 	private File allocateFileMemory(final String filename, final long sizeInBytes) throws IOException {
 		File file = new File(filename);
@@ -27,7 +27,7 @@ public class Client {
 		return file;
 	}
 
-	public void getFile(Socket socket, String path, int filesize, ArrayList<byte[]> summary) throws Exception {
+	public void getFile(Socket socket, String path, int filesize, Torrent summary) throws Exception {
 
 		int bytesRead;
 		int currentTot = 0;
@@ -49,50 +49,58 @@ public class Client {
 			}
 		} while (bytesRead > 0);
 		bos.write(bytearray, 0, currentTot);
-		
 
 		bos.flush();
 		bos.close();
 
-//		make hash from a file -> compare
+		// make hash from a file -> compare
 		File file = new File(path);
 
-		ArrayList<byte[]> mySummary = HashGenerator.createSHA1(file);
+		Torrent mySummary = new Torrent(file);
 
-		if (!HashGenerator.compareHash(mySummary, summary)) {
+		if (!(mySummary.equals(summary))) {
 			System.err.println("File is corrupted!");
-		}else {
+		} else {
 			System.out.println("File is not corrupted.");
 		}
 
-
 	}
 
-	public void runClient(int port) throws Exception {
+	public void runPeer(int port) throws Exception {
 
 		InetAddress host = InetAddress.getLocalHost();
 		Socket socket = null;
 		ObjectInputStream ois = null;
 
-		// establish socket connection to server
-		socket = new Socket(host.getHostName(), port);
+		try {
 
-		int filesize;
-		ArrayList<byte[]> summary = null;
+			// establish socket connection to server
+			socket = new Socket(host.getHostName(), port);
+			System.out.println("Connecting...");
 
-		String path = "SharingFiles/recivedFile.txt";
+			int filesize;
+			Torrent summary = null;
 
-		ArrayList<String> sharingFiles = new ArrayList<String>();
-		sharingFiles.add(path);
+			String path = "SharingFiles/recivedFile.txt";
 
-		ois = new ObjectInputStream(socket.getInputStream());
-		filesize = (int) ois.readObject();
-		summary = (ArrayList<byte[]>) ois.readObject();
+			ArrayList<String> sharingFiles = new ArrayList<String>();
+			sharingFiles.add(path);
 
-		getFile(socket, path, filesize, summary);
+			ois = new ObjectInputStream(socket.getInputStream());
+			filesize = (int) ois.readObject();
+			summary = (Torrent) ois.readObject();
 
-		System.out.println("Shutting down client");
-		socket.close();
+			getFile(socket, path, filesize, summary);
+
+			Scanner in = new Scanner(System.in);
+			String s = in.nextLine();
+			System.out.println("You entered string " + s);
+
+		} finally {
+			if (socket != null)
+				System.out.println("Shutting down peer" + socket.toString());
+			socket.close();
+		}
 
 	}
 

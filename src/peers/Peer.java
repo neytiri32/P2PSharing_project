@@ -25,10 +25,8 @@ public class Peer implements Runnable {
 	char role; // S == seed; D == downloader
 	Socket socket = null;
 	ObjectOutputStream oos = null;
-	ObjectInputStream ois = null;		
+	ObjectInputStream ois = null;
 	Scanner in = new Scanner(System.in);
-
-
 
 	/**
 	 * !! Currently not used !! Sending file to other peer
@@ -175,7 +173,7 @@ public class Peer implements Runnable {
 	 * initial talk so the tracker knows does peer want to download or be a seed
 	 * 
 	 * @throws IOException
-	 * @throws ClassNotFoundException 
+	 * @throws ClassNotFoundException
 	 */
 	private void initialTalk() throws IOException, ClassNotFoundException {
 		String myInput = "";
@@ -183,7 +181,7 @@ public class Peer implements Runnable {
 		while (true) {
 
 			String getMsg = (String) ois.readObject();
-			
+
 			System.out.println(getMsg);
 			if (getMsg.equals("OK")) {
 				role = myInput.charAt(0);
@@ -194,8 +192,6 @@ public class Peer implements Runnable {
 			myInput = in.nextLine();
 			oos.writeObject(myInput);
 		}
-
-		in.close();
 	}
 
 	/**
@@ -212,19 +208,12 @@ public class Peer implements Runnable {
 			System.out.println("Connecting...");
 			oos = new ObjectOutputStream(socket.getOutputStream());
 			ois = new ObjectInputStream(socket.getInputStream());
-			
+
 			Thread th = new Thread(this);
 			th.run();
 
-
-			while (!in.hasNext()) {
-				// do something
-				// just so the peer does not shut down; will be repaired later
-//				s = in.nextLine();
-			}
-			in.close();
-
 		} finally {
+			in.close();
 			if (socket != null) {
 				oos.writeObject("EXIT");
 				oos.close();
@@ -240,15 +229,32 @@ public class Peer implements Runnable {
 		try {
 			initialTalk();
 
+			String input = "";
 			if (role == 'S') {
 				// send torrent to the tracker
+				// TODO: ask peer to choose file
 				String path1 = "SharingFiles/article1.txt";
 				sendTorrent(socket, path1);
 				System.out.println("Torrent sent");
 
 			} else if (role == 'D') {
-				String x = in.nextLine();
-				oos.writeObject(x);
+				do {
+					System.out.println("Input must be \"SUMM\" or \"DATA\"");
+					input = in.nextLine();
+				} while (!input.equals("SUMM") && !input.equals("DATA"));
+				oos.writeObject(input);
+				if(input.equals("SUMM")) {
+					//TODO receive summary, save summary in global variable?
+					Torrent summary = null;
+					summary = (Torrent) ois.readObject();
+				} else {
+					//TODO receive data, also global?
+				}
+			}
+
+			while (true) {
+				// run so the peer does not end with execution
+				// TODO 
 			}
 
 		} catch (Exception e) {

@@ -23,8 +23,8 @@
 	* [x] Tracker allows the registration of the shared file summary (“torrent”), so that a seed can provide such information.
 	* [x] Tracker Allows the registration of the access information of the peers. The peers will register with the tracker, providing the information needed to connect to them: IP / port or remote object name.
 	* [x] Tracker Allows the registration of seed / download. Peers register in the tracker if they are downloading the file or acting as seeds.
-	* [ ] Tracker provides the summary of the file to peers who request it.
-	* [ ] Tracker provides a list of peers who are sharing the file. That is, it provides a list of the access information (IP/remote object name) of such peers.
-	* [ ] Tracker registers when a peers leaves the swarm. So that the tracker can delete it from the list.
+	* [x] Tracker provides the summary of the file to peers who request it.
+	* [x] Tracker provides a list of peers who are sharing the file. That is, it provides a list of the access information (IP/remote object name) of such peers.
+	* [x] Tracker registers when a peers leaves the swarm. So that the tracker can delete it from the list.
 	
 	

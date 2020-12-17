@@ -1,18 +1,10 @@
 package tracker;
 
-import java.io.BufferedInputStream;
-import java.io.BufferedOutputStream;
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
-import java.io.OutputStream;
-import java.io.RandomAccessFile;
 import java.math.BigInteger;
 import java.net.ServerSocket;
 import java.net.Socket;
@@ -25,7 +17,7 @@ import java.util.Scanner;
 
 import hash.*;
 
-public class Tracker {
+public class Tracker implements Runnable {
 
 	// activeClients is hashMap that contains Clients in shape:
 	// <uniqueID, address:port>
@@ -33,172 +25,199 @@ public class Tracker {
 	Map<String, Torrent> sharedTorrents = new HashMap<String, Torrent>();
 	List<String> seeds = new ArrayList<String>();
 
+	ServerSocket server = null;
+	Socket socket = null;
+	String uID; // id of currently connected peer
+
+	ObjectOutputStream oos = null;
+	ObjectInputStream ois = null;
+	
+	boolean running = false;
+
 	private static SecureRandom random = new SecureRandom();
 
+	/**
+	 * @return
+	 */
 	public static String getUniqueId() {
 		return new BigInteger(130, random).toString(32).substring(0, 6);
 	}
 
-	public void shareFile(Socket socket, String path) throws Exception {
-		File file = new File(path);
+	/**
+	 * 
+	 * @return true if the peer wants to be seed
+	 * @throws IOException
+	 * @throws ClassNotFoundException 
+	 */
+	private boolean isSeed() throws IOException, ClassNotFoundException {
 
-		OutputStream os = socket.getOutputStream();
-		ObjectOutputStream oos = null;
-
-		Torrent summary = new Torrent(file);
-
-		byte[] bytearray = new byte[(int) file.length()];
-		System.out.println("Sending Size...");
-		oos = new ObjectOutputStream(socket.getOutputStream());
-		oos.writeObject(bytearray.length);
-		oos.writeObject(summary);
-
-		BufferedInputStream bin = new BufferedInputStream(new FileInputStream(file));
-		bin.read(bytearray, 0, bytearray.length);
-
-		System.out.println("Sending Files...");
-		os.write(bytearray, 0, bytearray.length);
-		os.flush();
-
-	}
-
-	private File allocateFileMemory(final String filename, final long sizeInBytes) throws IOException {
-		File file = new File(filename);
-		file.createNewFile();
-
-		RandomAccessFile raf = new RandomAccessFile(file, "rw");
-		raf.setLength(sizeInBytes);
-		raf.close();
-
-		return file;
-	}
-	
-	public void getFile(Socket socket, String path, int filesize, Torrent summary) throws Exception {
-
-		int bytesRead;
-		int currentTot = 0;
-
-		byte[] bytearray = new byte[filesize];
-		InputStream is = socket.getInputStream();
-
-		// allocate memory
-		File fo = allocateFileMemory(path, filesize);
-		BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(fo));
-
-		bytesRead = is.read(bytearray, 0, bytearray.length);
-
-		currentTot = bytesRead; // infinitive
-		do {
-			bytesRead = is.read(bytearray, currentTot, (bytearray.length - currentTot));
-			if (bytesRead >= 0) {
-				currentTot += bytesRead;
-			}
-		} while (bytesRead > 0);
-		bos.write(bytearray, 0, currentTot);
-
-		bos.flush();
-		bos.close();
-
-		// make hash from a file -> compare
-		File file = new File(path);
-
-		Torrent mySummary = new Torrent(file);
-
-		if (!(mySummary.equals(summary))) {
-			System.err.println("File is corrupted!");
-		} else {
-			System.out.println("File is not corrupted.");
-		}
-
-	}
-
-	private boolean isSeed(DataOutputStream dOut, DataInputStream dIn, String uID) throws IOException {
-		// initial talk so the tracker knows do peer want to download or be a seed and add it to right list
 		while (true) {
-			dOut.writeUTF(
-					"If you want to download files return 'D', else if you want to act as seed return 'S'");
-			dOut.flush();
+			
+			oos.writeObject("If you want to download files return 'D', \nelse if you want to act as seed return 'S'");
+			
+			String answer = (String) ois.readObject();
 
-			String answer = dIn.readUTF();
 			if (answer.equals("S")) {
-				System.out.println("he wants to be seed");
-				dOut.writeUTF("OK");
-				dOut.flush();
+				System.out.println("ID(" + uID + "): peer wants to be seed");
+				oos.writeObject("OK");
+				oos.writeObject("You are now a seeder.");
 				return true;
 			} else if (answer.equals("D")) {
-				System.out.println("he wants to download files");
+				System.out.println("ID(" + uID + "): peer wants to download files");
 				seeds.add(uID);
-				dOut.writeUTF("OK");
-				dOut.flush();
+				oos.writeObject("OK");
+				String msg = "You are now a downloader. I am waiting for your next request.\n\n"
+						+ "Instructions for making request:\n " + "Send \"SUMM\" if you want to get summary,\n"
+						+ " send \"DATA\"if you want to get needed data for connecting with peers and getting the file\n";
+				oos.writeObject(msg);
 				return false;
 			}
 		}
 	}
-	
-	public void peerShutingDown(Socket socket) {
-		//TODO
-		//delete from activClients
-		//delete maybe from seeds and sharedTorrents (if it is in it)
-		//...
-	}
-	
-	public void reciveFile(Socket socket) throws Exception {
-		//recive file
-		int filesize;
-		Torrent summary = null;
-		String path = "SharingFiles/recivedFile.txt";
-		ArrayList<String> sharingFiles = new ArrayList<String>();
-		sharingFiles.add(path);
-		ObjectInputStream ois = new ObjectInputStream(socket.getInputStream());
-		filesize = (int) ois.readObject();
-		summary = (Torrent) ois.readObject();
-		getFile(socket, path, filesize, summary);
-		
-	}
-	
-	public void runTracker(int port) throws Exception {
-		ServerSocket server = null;
-		Socket socket = null;
-		Scanner in = new Scanner(System.in);
 
-		ObjectInputStream ois = null;
+	/**
+	 * invoked when peer shuts down
+	 * 
+	 * @throws IOException
+	 */
+	public void peerShuttingDown() throws IOException {
+
+		if (socket != null) {
+			oos.close();
+			ois.close();
+			socket.close();
+		}
+		System.out.println("Peer ID(" + uID + ") exited.");
+
+		// delete peer form lists if its in them
+		activeClients.remove(uID);
+		seeds.remove(uID);
+
+		// if there is no more seeds, remove torrent from the list
+		if (seeds.isEmpty())
+			sharedTorrents.remove(uID);
+
+	}
+
+	/**
+	 * @param port
+	 * @throws Exception
+	 */
+	public void runTracker(int port) throws Exception {
+
+		Scanner in = new Scanner(System.in);
 
 		// creating socket and waiting for client connection
 		try {
 			server = new ServerSocket(port);
-			System.out.println("Started tracker(server) with ServerSocket: " + server);
+			System.out.println("Started tracker: " + server);
 			while (true) {
-				System.out.println("Waiting for the client request");
+				System.out.println("Waiting for the peer request");
 				try {
 					socket = server.accept();
 					System.out.println("Accepted connection : " + socket.getInetAddress().getHostAddress() + ':'
 							+ socket.getPort());
 
-					// can there be same ports and different address?
-					String uID = getUniqueId();
-					activeClients.put(uID, socket.getPort() + ":" + socket.getInetAddress().getHostAddress());
-
-					DataOutputStream dOut = new DataOutputStream(socket.getOutputStream());
-					DataInputStream dIn = new DataInputStream(socket.getInputStream());
+					oos = new ObjectOutputStream(socket.getOutputStream());
+					ois = new ObjectInputStream(socket.getInputStream());
 					
-					//initial talk, checking is the peer seeder or downloader
-					//if it is sender, save torrent
-					if(isSeed(dOut, dIn, uID)) {
-						//Receive torrent
+					// unique id(port cannot be ID because if we use different IP address, the port
+					// can be the same)
+					uID = getUniqueId();
+					activeClients.put(uID, socket.getInetAddress().getHostAddress() + ":" + socket.getPort());
+
+					// initial talk, checking is the peer seeder or downloader
+					// if it is sender, save torrent, else wait for request
+					// this is a blocking part(another peer has to wait until this peer finishes his talk
+					// TODO: change this part into thread
+					if (isSeed()) {
+						// Receive torrent
 						Torrent summary = null;
-						ois = new ObjectInputStream(socket.getInputStream());
 						summary = (Torrent) ois.readObject();
 						sharedTorrents.put(uID, summary);
+					} else {
+						// Wait for request (summary or IP or exit)
+						running = true;
+						Thread th = new Thread(this);
+						th.start();
+						// while loop continues while thread is working
 					}
 
+				} catch (Exception e) {
 				} finally {
-					if (socket != null)
-						socket.close();
+					// if thread is working, do not close connection
+					if (!running)
+						peerShuttingDown();
 				}
 			}
 		} finally {
 			if (server != null)
 				server.close();
+			in.close();
+		}
+	}
+
+	/**
+	 * Wait for request (summary or IP:port or exit)
+	 */
+	@Override
+	public void run() {
+		while (running) {
+
+			String request = null;
+			// listen to the request "SUMM" or "DATA" or "EXIT"
+			try {
+				request = (String) ois.readObject();
+				switch (request) {
+				case "SUMM":
+
+					if (sharedTorrents.isEmpty()) {
+						oos.writeObject("There is no available summary");
+					} else {
+						System.out.println("Sending summary to " + uID);
+
+						// this is always sending summary that is from the first Seeder in the array
+						// TODO: communicate with a peer so it can tell you which one does he wants
+						oos.writeObject(sharedTorrents.get(seeds.get(0)));						
+					}
+					break;
+				case "DATA":
+					System.out.println("DATA");
+
+					if (seeds.isEmpty()) {
+						oos.writeObject("There is no available data of the seeder");						
+
+					} else {
+						System.out.println("Sending data to " + uID);
+
+						// this is always sending summary that is from the first Seeder in the array
+						// TODO: check which summary peer asked and send him a data of all clients that
+						// are seeding it
+						oos.writeObject(activeClients.get(seeds.get(0)));						
+					}
+					break;
+				case "EXIT":
+					running = false;
+					peerShuttingDown();
+					// exit this thread because socket does not exist anymore
+					break;
+				default:
+					break;
+				}
+			} catch (IOException e1) {
+				running = false;
+				try {
+					// close if exc happens
+					peerShuttingDown();
+				} catch (IOException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+				return;
+			} catch (ClassNotFoundException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
 		}
 	}
 }

@@ -20,21 +20,23 @@ import java.util.Scanner;
 
 import hash.*;
 
-public class Peer {
+public class Peer implements Runnable {
 
 	char role; // S == seed; D == downloader
+	Socket socket = null;
+	ObjectOutputStream oos = null;
+	ObjectInputStream ois = null;		
+	Scanner in = new Scanner(System.in);
 
-	private File allocateFileMemory(final String filename, final long sizeInBytes) throws IOException {
-		File file = new File(filename);
-		file.createNewFile();
 
-		RandomAccessFile raf = new RandomAccessFile(file, "rw");
-		raf.setLength(sizeInBytes);
-		raf.close();
 
-		return file;
-	}
-
+	/**
+	 * !! Currently not used !! Sending file to other peer
+	 * 
+	 * @param socket
+	 * @param path
+	 * @throws Exception
+	 */
 	public void shareFile(Socket socket, String path) throws Exception {
 		File file = new File(path);
 
@@ -56,20 +58,39 @@ public class Peer {
 		os.write(bytearray, 0, bytearray.length);
 		os.flush();
 
-	}
-	
-	public void sendTorrent(Socket socket, String path) throws Exception {
-		File file = new File(path);
+		bin.close();
 
-		OutputStream os = socket.getOutputStream();
-		ObjectOutputStream oos = null;
-		oos = new ObjectOutputStream(socket.getOutputStream());
-
-		Torrent summary = new Torrent(file);
-		oos.writeObject(summary); 
-		oos.flush();
 	}
-	
+
+	/**
+	 * !! Currently not used !! For allocating memory when receiving file from other
+	 * peer
+	 * 
+	 * @param filename
+	 * @param sizeInBytes
+	 * @return
+	 * @throws IOException
+	 */
+	private File allocateFileMemory(final String filename, final long sizeInBytes) throws IOException {
+		File file = new File(filename);
+		file.createNewFile();
+
+		RandomAccessFile raf = new RandomAccessFile(file, "rw");
+		raf.setLength(sizeInBytes);
+		raf.close();
+
+		return file;
+	}
+
+	/**
+	 * !! Currently not used !!
+	 * 
+	 * @param socket
+	 * @param path
+	 * @param filesize
+	 * @param summary
+	 * @throws Exception
+	 */
 	public void getFile(Socket socket, String path, int filesize, Torrent summary) throws Exception {
 
 		int bytesRead;
@@ -109,56 +130,130 @@ public class Peer {
 
 	}
 
-	private void initialTalk(DataOutputStream dOut, DataInputStream dIn) throws IOException {
-		// initial talk so the tracker knows do peer want to download or be a seed
-		String get;
-		String s = "";
-		Scanner in = new Scanner(System.in);
+	/**
+	 * !! Currently not used !!
+	 * 
+	 * TODO For receiving file from other shocker
+	 * reciveFile()->getFile()->allocateMemmory()
+	 * 
+	 * @param socket
+	 * @throws Exception
+	 */
+	public void reciveFile(Socket socket) throws Exception {
+		// recive file
+		int filesize;
+		Torrent summary = null;
+		String path = "SharingFiles/recivedFile.txt";
+		ArrayList<String> sharingFiles = new ArrayList<String>();
+		sharingFiles.add(path);
+		ObjectInputStream ois = new ObjectInputStream(socket.getInputStream());
+		filesize = (int) ois.readObject();
+		summary = (Torrent) ois.readObject();
+		getFile(socket, path, filesize, summary);
 
-		while (true) {
-			get = dIn.readUTF();
-
-			System.out.println(get);
-			if (get.equals("OK")) {
-				role = s.charAt(0);
-				break;
-			}
-			s = in.nextLine();
-			dOut.writeUTF(s);
-			dOut.flush();
-		}
 	}
 
+	// active code
+
+	/**
+	 * Sending summary to the tracker
+	 * 
+	 * @param socket
+	 * @param path
+	 * @throws Exception
+	 */
+	public void sendTorrent(Socket socket, String path) throws Exception {
+		File file = new File(path);
+
+		Torrent summary = new Torrent(file);
+		oos.writeObject(summary);
+		oos.flush();
+
+	}
+
+	/**
+	 * initial talk so the tracker knows does peer want to download or be a seed
+	 * 
+	 * @throws IOException
+	 * @throws ClassNotFoundException 
+	 */
+	private void initialTalk() throws IOException, ClassNotFoundException {
+		String myInput = "";
+
+		while (true) {
+
+			String getMsg = (String) ois.readObject();
+			
+			System.out.println(getMsg);
+			if (getMsg.equals("OK")) {
+				role = myInput.charAt(0);
+				// instructions or info message
+				System.out.println((String) ois.readObject());
+				break;
+			}
+			myInput = in.nextLine();
+			oos.writeObject(myInput);
+		}
+
+		in.close();
+	}
+
+	/**
+	 * @param port
+	 * @throws Exception
+	 */
 	public void runPeer(int port) throws Exception {
 
 		InetAddress host = InetAddress.getLocalHost();
-		Socket socket = null;
-		ObjectInputStream ois = null;
 
 		try {
-
 			// establish socket connection to server
 			socket = new Socket(host.getHostName(), port);
 			System.out.println("Connecting...");
+			oos = new ObjectOutputStream(socket.getOutputStream());
+			ois = new ObjectInputStream(socket.getInputStream());
+			
+			Thread th = new Thread(this);
+			th.run();
 
-			DataOutputStream dOut = new DataOutputStream(socket.getOutputStream());
-			DataInputStream dIn = new DataInputStream(socket.getInputStream());
-			initialTalk(dOut, dIn);
 
-			//sendFile
-			String path3 = "/home/matea/Desktop/new.txt"; // isto je ok
-			String path1 = "SharingFiles/article1.txt";
-
-			sendTorrent(socket, path1);
-			shareFile(socket, path1);
-
+			while (!in.hasNext()) {
+				// do something
+				// just so the peer does not shut down; will be repaired later
+//				s = in.nextLine();
+			}
+			in.close();
 
 		} finally {
-			if (socket != null)
-				System.out.println("Shutting down peer" + socket.toString());
-			socket.close();
+			if (socket != null) {
+				oos.writeObject("EXIT");
+				oos.close();
+				ois.close();
+				socket.close();
+			}
 		}
 
+	}
+
+	@Override
+	public void run() {
+		try {
+			initialTalk();
+
+			if (role == 'S') {
+				// send torrent to the tracker
+				String path1 = "SharingFiles/article1.txt";
+				sendTorrent(socket, path1);
+				System.out.println("Torrent sent");
+
+			} else if (role == 'D') {
+				String x = in.nextLine();
+				oos.writeObject(x);
+			}
+
+		} catch (Exception e) {
+			// TODO: handle exception
+		}
 	}
 
 }

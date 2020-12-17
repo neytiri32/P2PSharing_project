@@ -250,6 +250,7 @@ public class Peer implements Runnable {
 				} else {
 					//TODO receive data, also global?
 				}
+					
 			}
 
 			while (true) {

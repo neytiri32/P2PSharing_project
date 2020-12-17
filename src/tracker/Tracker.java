@@ -2,6 +2,7 @@ package tracker;
 
 import java.io.DataInputStream;
 import java.io.DataOutputStream;
+import java.io.EOFException;
 import java.io.IOException;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -31,30 +32,28 @@ public class Tracker implements Runnable {
 
 	ObjectOutputStream oos = null;
 	ObjectInputStream ois = null;
-	
-	boolean running = false;
 
 	private static SecureRandom random = new SecureRandom();
 
 	/**
-	 * @return
+	 * @return unique ID for every peer
 	 */
 	public static String getUniqueId() {
 		return new BigInteger(130, random).toString(32).substring(0, 6);
 	}
 
 	/**
-	 * 
-	 * @return true if the peer wants to be seed
+	 * @return
+	 * @throws EOFException
 	 * @throws IOException
-	 * @throws ClassNotFoundException 
+	 * @throws ClassNotFoundException
 	 */
-	private boolean isSeed() throws IOException, ClassNotFoundException {
+	private boolean isSeed() throws EOFException, IOException, ClassNotFoundException {
 
 		while (true) {
-			
+
 			oos.writeObject("If you want to download files return 'D', \nelse if you want to act as seed return 'S'");
-			
+
 			String answer = (String) ois.readObject();
 
 			if (answer.equals("S")) {
@@ -80,12 +79,21 @@ public class Tracker implements Runnable {
 	 * 
 	 * @throws IOException
 	 */
-	public void peerShuttingDown() throws IOException {
+	public void peerShuttingDown() {
 
-		if (socket != null) {
-			oos.close();
-			ois.close();
-			socket.close();
+		if (socket != null) { // try to close everything that is open
+			try {
+				oos.close();
+			} catch (IOException e) {
+			}
+			try {
+				ois.close();
+			} catch (IOException e) {
+			}
+			try {
+				socket.close();
+			} catch (IOException e) {
+			}
 		}
 		System.out.println("Peer ID(" + uID + ") exited.");
 
@@ -101,9 +109,11 @@ public class Tracker implements Runnable {
 
 	/**
 	 * @param port
+	 * @throws ClassNotFoundException
+	 * @throws IOException
 	 * @throws Exception
 	 */
-	public void runTracker(int port) throws Exception {
+	public void runTracker(int port) {
 
 		Scanner in = new Scanner(System.in);
 
@@ -120,7 +130,7 @@ public class Tracker implements Runnable {
 
 					oos = new ObjectOutputStream(socket.getOutputStream());
 					ois = new ObjectInputStream(socket.getInputStream());
-					
+
 					// unique id(port cannot be ID because if we use different IP address, the port
 					// can be the same)
 					uID = getUniqueId();
@@ -128,42 +138,54 @@ public class Tracker implements Runnable {
 
 					// initial talk, checking is the peer seeder or downloader
 					// if it is sender, save torrent, else wait for request
-					// this is a blocking part(another peer has to wait until this peer finishes his talk
+					// this is a blocking part(another peer has to wait until this peer finishes his
+					// talk
 					// TODO: change this part into thread
 					if (isSeed()) {
 						// Receive torrent
 						Torrent summary = null;
 						summary = (Torrent) ois.readObject();
 						sharedTorrents.put(uID, summary);
-						//stay alive; TODO repair functionality
+						
+						// stay alive; TODO repair functionality
 						new Thread(() -> {
-							running = true;
-					         while(true) {
-					            try {
-					               Thread.sleep(5000);
-					            } catch(Exception e) {
-					               e.printStackTrace();
-					            }
-					         }
-					      }).start();
+							boolean running = true;
+							while (running) {
+								try {
+									//just to check did peer close
+									Object o = ois.readObject(); 
+								} catch (ClassNotFoundException e) {
+									e.printStackTrace();
+								} catch (IOException e) {
+									running = false;
+									peerShuttingDown();
+								}
+							}
+						}).start();
 					} else {
 						// Wait for request (summary or IP or exit)
-						running = true;
 						Thread th = new Thread(this);
 						th.start();
 						// while loop continues while thread is working
 					}
 
-				} catch (Exception e) {
-				} finally {
-					// if thread is working, do not close connection
-					if (!running)
-						peerShuttingDown();
+				} catch (EOFException e1) { // exception while trying to write in closed peer
+					peerShuttingDown();
+				} catch (IOException e2) { // exception while trying to read from closed peer
+					peerShuttingDown();
+				} catch (Exception e) { // ClassNotFoundException
+					e.printStackTrace();
 				}
 			}
+		} catch (Exception e) {
+			e.printStackTrace();
 		} finally {
 			if (server != null)
-				server.close();
+				try {
+					server.close();
+				} catch (IOException e) {
+					e.printStackTrace();
+				}
 			in.close();
 		}
 	}
@@ -173,6 +195,8 @@ public class Tracker implements Runnable {
 	 */
 	@Override
 	public void run() {
+		boolean running = true;
+
 		while (running) {
 
 			String request = null;
@@ -189,14 +213,14 @@ public class Tracker implements Runnable {
 
 						// this is always sending summary that is from the first Seeder in the array
 						// TODO: communicate with a peer so it can tell you which one does he wants
-						oos.writeObject(sharedTorrents.get(seeds.get(0)));						
+						oos.writeObject(sharedTorrents.get(seeds.get(0)));
 					}
 					break;
 				case "DATA":
 					System.out.println("DATA");
 
 					if (seeds.isEmpty()) {
-						oos.writeObject("There is no available data of the seeder");						
+						oos.writeObject("There is no available data of the seeder");
 
 					} else {
 						System.out.println("Sending data to " + uID);
@@ -204,7 +228,7 @@ public class Tracker implements Runnable {
 						// this is always sending summary that is from the first Seeder in the array
 						// TODO: check which summary peer asked and send him a data of all clients that
 						// are seeding it
-						oos.writeObject(activeClients.get(seeds.get(0)));						
+						oos.writeObject(activeClients.get(seeds.get(0)));
 					}
 					break;
 				case "EXIT":
@@ -215,15 +239,13 @@ public class Tracker implements Runnable {
 				default:
 					break;
 				}
-			} catch (IOException e1) {
+			} catch (EOFException e1) { // exception while trying to write in closed peer
 				running = false;
-				try {
-					// close if exc happens
-					peerShuttingDown();
-				} catch (IOException e) {
-					// TODO Auto-generated catch block
-					e.printStackTrace();
-				}
+				peerShuttingDown();
+				return;
+			} catch (IOException e2) { // exception while trying to read from closed peer
+				running = false;
+				peerShuttingDown();
 				return;
 			} catch (ClassNotFoundException e) {
 				// TODO Auto-generated catch block

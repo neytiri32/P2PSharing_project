@@ -11,8 +11,6 @@
 	* [ ] send block by block and compare hash by hash
 	* [ ] Neighbor class that includes all information from peers: IP / port or remote object name, your bitmap of the blocks having, if you are downloading, the download rate if necessary, etc. .
 	* [ ] define message types using classes, which will facilitate the transport network
-	* [ ] run the application on the server lab (labit601.upct.es) and check that it works properly with peers running on a remote computer
-	* [ ] add threads and Runnable 
 	
 	** First part **
 	* [x] Select at least one file to share

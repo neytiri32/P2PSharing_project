@@ -9,6 +9,11 @@ import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.Arrays;
 
+/**
+ * Represents object containing hash and his size
+ * Hash is arraylist of bytes
+ *
+ */
 public class Torrent implements Serializable {
 
 	private ArrayList<byte[]> summary;
@@ -26,6 +31,13 @@ public class Torrent implements Serializable {
 		return summary;
 	}
 	
+	
+	/**
+	 * Making arraylist of bytes for recived file
+	 * 
+	 * @param file
+	 * @throws Exception
+	 */
 	public void setSummary(File file) throws Exception {
 		MessageDigest md = MessageDigest.getInstance("SHA-1");
 		InputStream fis = new FileInputStream(file);

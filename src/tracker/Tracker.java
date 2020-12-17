@@ -135,6 +135,17 @@ public class Tracker implements Runnable {
 						Torrent summary = null;
 						summary = (Torrent) ois.readObject();
 						sharedTorrents.put(uID, summary);
+						//stay alive; TODO repair functionality
+						new Thread(() -> {
+							running = true;
+					         while(true) {
+					            try {
+					               Thread.sleep(5000);
+					            } catch(Exception e) {
+					               e.printStackTrace();
+					            }
+					         }
+					      }).start();
 					} else {
 						// Wait for request (summary or IP or exit)
 						running = true;

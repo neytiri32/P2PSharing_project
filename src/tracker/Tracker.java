@@ -29,6 +29,10 @@ public class Tracker implements Runnable {
 	ServerSocket server = null;
 	Socket socket = null;
 	String uID; // id of currently connected peer
+	
+	//my access informations
+	String myIP = "";
+	int myPort;
 
 	ObjectOutputStream oos = null;
 	ObjectInputStream ois = null;
@@ -40,6 +44,14 @@ public class Tracker implements Runnable {
 	 */
 	public static String getUniqueId() {
 		return new BigInteger(130, random).toString(32).substring(0, 6);
+	}
+	
+	public String getMyIP() {
+		return myIP;
+	}
+	
+	public int getMyPort() {
+		return myPort;
 	}
 
 	/**
@@ -121,6 +133,11 @@ public class Tracker implements Runnable {
 		try {
 			server = new ServerSocket(port);
 			System.out.println("Started tracker: " + server);
+			
+			//setting my access informations
+			myIP = server.getInetAddress().getHostAddress();
+			myPort = server.getLocalPort();
+			
 			while (true) {
 				System.out.println("Waiting for the peer request");
 				try {
@@ -128,6 +145,8 @@ public class Tracker implements Runnable {
 					System.out.println("Accepted connection : " + socket.getInetAddress().getHostAddress() + ':'
 							+ socket.getPort());
 
+
+					
 					oos = new ObjectOutputStream(socket.getOutputStream());
 					ois = new ObjectInputStream(socket.getInputStream());
 

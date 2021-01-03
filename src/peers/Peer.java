@@ -16,6 +16,7 @@ import java.io.RandomAccessFile;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Scanner;
 
 import hash.*;
@@ -27,6 +28,22 @@ public class Peer implements Runnable {
 	ObjectOutputStream oos = null;
 	ObjectInputStream ois = null;
 	Scanner in = new Scanner(System.in);
+	
+	//list of other participants
+	List<String> neighbours = new ArrayList<String>();
+
+	
+	//my access informations
+	String myIP = "";
+	int myPort;
+	
+	public String getMyIP() {
+		return myIP;
+	}
+	
+	public int getMyPort() {
+		return myPort;
+	}
 
 	/**
 	 * !! Currently not used !! Sending file to other peer
@@ -103,7 +120,7 @@ public class Peer implements Runnable {
 
 		bytesRead = is.read(bytearray, 0, bytearray.length);
 
-		currentTot = bytesRead; // infinitive
+		currentTot = bytesRead; 
 		do {
 			bytesRead = is.read(bytearray, currentTot, (bytearray.length - currentTot));
 			if (bytesRead >= 0) {
@@ -205,7 +222,13 @@ public class Peer implements Runnable {
 		try {
 			// establish socket connection to server
 			socket = new Socket(host.getHostName(), port);
-			System.out.println("Connecting...");
+			System.out.println("Connecting..."+ socket);
+			
+			//setting my access informations
+			myIP = socket.getInetAddress().getHostAddress();
+			myPort = socket.getLocalPort();
+			
+			
 			oos = new ObjectOutputStream(socket.getOutputStream());
 			ois = new ObjectInputStream(socket.getInputStream());
 
@@ -215,6 +238,7 @@ public class Peer implements Runnable {
 		} finally {
 			in.close();
 			if (socket != null) {
+				// Inform the tracker when they leave the swarm.
 				oos.writeObject("EXIT");
 				oos.close();
 				ois.close();

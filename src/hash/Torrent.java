@@ -12,16 +12,20 @@ import java.util.Arrays;
 /**
  * Represents object containing hash and his size
  * Hash is arraylist of bytes
+ * 
+ * 
  *
  */
 public class Torrent implements Serializable {
 
 	private ArrayList<byte[]> summary;
 	int size; 
+	String fileName = "";
 
-	public Torrent(File file) {
+	public Torrent(File file, String fileName) {
 		try {
 			setSummary(file);
+			fileName = fileName;
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
@@ -31,6 +35,9 @@ public class Torrent implements Serializable {
 		return summary;
 	}
 	
+	public String getFileName() {
+		return fileName;
+	}
 	
 	/**
 	 * Making arraylist of bytes for recived file

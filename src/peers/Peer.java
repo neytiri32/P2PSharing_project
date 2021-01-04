@@ -58,7 +58,7 @@ public class Peer implements Runnable {
 		OutputStream os = socket.getOutputStream();
 		ObjectOutputStream oos = null;
 
-		Torrent summary = new Torrent(file);
+		Torrent summary = new Torrent(file, path.substring(path.lastIndexOf("/") + 1).trim());
 
 		byte[] bytearray = new byte[(int) file.length()];
 		System.out.println("Sending Size...");
@@ -135,7 +135,7 @@ public class Peer implements Runnable {
 		// make hash from a file -> compare
 		File file = new File(path);
 
-		Torrent mySummary = new Torrent(file);
+		Torrent mySummary = new Torrent(file, path.substring(path.lastIndexOf("/") + 1).trim());
 
 		if (!(mySummary.equals(summary))) {
 			System.err.println("File is corrupted!");
@@ -180,7 +180,7 @@ public class Peer implements Runnable {
 	public void sendTorrent(Socket socket, String path) throws Exception {
 		File file = new File(path);
 
-		Torrent summary = new Torrent(file);
+		Torrent summary = new Torrent(file,  path.substring(path.lastIndexOf("/") + 1).trim());
 		oos.writeObject(summary);
 		oos.flush();
 

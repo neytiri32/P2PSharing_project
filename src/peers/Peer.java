@@ -25,7 +25,6 @@ import hash.*;
 
 public class Peer {
 
-	char role; // S == seed; D == downloader
 	Socket socket = null;
 	ObjectOutputStream oos = null;
 	ObjectInputStream ois = null;
@@ -159,10 +158,10 @@ public class Peer {
 	 * @throws Exception
 	 */
 	public void reciveFile(Socket socket) throws Exception {
-		// recive file
+		// Receive file
 		int filesize;
 		Torrent summary = null;
-		String path = "SharingFiles/recivedFile.txt";
+		String path = "SharingFiles/recivedFile_" + myID + ".txt";
 		ArrayList<String> sharingFiles = new ArrayList<String>();
 		sharingFiles.add(path);
 		ObjectInputStream ois = new ObjectInputStream(socket.getInputStream());
@@ -225,6 +224,8 @@ public class Peer {
 
 				System.out.println("Tracker says: " + (String) ois.readObject());
 
+				// TODO thread listening to other peers connection
+
 			} else if (obj instanceof Torrent) {
 				// this peer is downloader
 				recivedTorrent = (Torrent) obj;
@@ -234,18 +235,15 @@ public class Peer {
 
 				neighbours = (HashMap<String, String>) ois.readObject(); // stops here and waits
 				System.out.println("List of seeds recived");
-				System.out.println(neighbours.toString());
-				// thread connect to wanted peers
+
+				// TODO thread connect to wanted peers
+				// TODO thread listening to other peers connection
 
 			}
 
 			while (true) {
-				Thread.sleep(1234);
+				Thread.sleep(1234678);
 			}
-
-//			Thread th = new Thread(this);
-//			th.run();
-
 		} finally {
 			in.close();
 			if (socket != null) {

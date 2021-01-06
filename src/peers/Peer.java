@@ -16,31 +16,35 @@ import java.io.RandomAccessFile;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Scanner;
 
 import hash.*;
 
-public class Peer implements Runnable {
+public class Peer {
 
 	char role; // S == seed; D == downloader
 	Socket socket = null;
 	ObjectOutputStream oos = null;
 	ObjectInputStream ois = null;
 	Scanner in = new Scanner(System.in);
-	
-	//list of other participants
-	List<String> neighbours = new ArrayList<String>();
 
-	
-	//my access informations
+	// list of other participants
+	Map<String, String> neighbours = new HashMap<String, String>();
+
+	Torrent recivedTorrent = null;
+
+	// my access informations
 	String myIP = "";
 	int myPort;
-	
+	String myID = "";
+
 	public String getMyIP() {
 		return myIP;
 	}
-	
+
 	public int getMyPort() {
 		return myPort;
 	}
@@ -120,7 +124,7 @@ public class Peer implements Runnable {
 
 		bytesRead = is.read(bytearray, 0, bytearray.length);
 
-		currentTot = bytesRead; 
+		currentTot = bytesRead;
 		do {
 			bytesRead = is.read(bytearray, currentTot, (bytearray.length - currentTot));
 			if (bytesRead >= 0) {
@@ -180,35 +184,10 @@ public class Peer implements Runnable {
 	public void sendTorrent(Socket socket, String path) throws Exception {
 		File file = new File(path);
 
-		Torrent summary = new Torrent(file,  path.substring(path.lastIndexOf("/") + 1).trim());
+		Torrent summary = new Torrent(file, path.substring(path.lastIndexOf("/") + 1).trim());
 		oos.writeObject(summary);
 		oos.flush();
 
-	}
-
-	/**
-	 * initial talk so the tracker knows does peer want to download or be a seed
-	 * 
-	 * @throws IOException
-	 * @throws ClassNotFoundException
-	 */
-	private void initialTalk() throws IOException, ClassNotFoundException {
-		String myInput = "";
-
-		while (true) {
-
-			String getMsg = (String) ois.readObject();
-
-			System.out.println(getMsg);
-			if (getMsg.equals("OK")) {
-				role = myInput.charAt(0);
-				// instructions or info message
-				System.out.println((String) ois.readObject());
-				break;
-			}
-			myInput = in.nextLine();
-			oos.writeObject(myInput);
-		}
 	}
 
 	/**
@@ -222,18 +201,50 @@ public class Peer implements Runnable {
 		try {
 			// establish socket connection to server
 			socket = new Socket(host.getHostName(), port);
-			System.out.println("Connecting..."+ socket);
-			
-			//setting my access informations
+			System.out.println("Connecting..." + socket);
+
+			// setting my access informations
 			myIP = socket.getInetAddress().getHostAddress();
 			myPort = socket.getLocalPort();
-			
-			
+
 			oos = new ObjectOutputStream(socket.getOutputStream());
 			ois = new ObjectInputStream(socket.getInputStream());
 
-			Thread th = new Thread(this);
-			th.run();
+			myID = (String) ois.readObject();
+			System.out.println("My ID is: " + myID);
+
+			Object obj = ois.readObject();
+			if (obj instanceof String) {
+				// this peer is initial peer
+				String recivedMsg = (String) obj;
+				System.out.println(recivedMsg);
+
+				// TODO choose file
+				sendTorrent(socket, "SharingFiles/article1.txt");
+				System.out.println("Torrent sent");
+
+				System.out.println("Tracker says: " + (String) ois.readObject());
+
+			} else if (obj instanceof Torrent) {
+				// this peer is downloader
+				recivedTorrent = (Torrent) obj;
+				System.out.println("Torrent recived");
+
+				oos.writeObject("OK. \nPlease send me list of seeds");
+
+				neighbours = (HashMap<String, String>) ois.readObject(); // stops here and waits
+				System.out.println("List of seeds recived");
+				System.out.println(neighbours.toString());
+				// thread connect to wanted peers
+
+			}
+
+			while (true) {
+				Thread.sleep(1234);
+			}
+
+//			Thread th = new Thread(this);
+//			th.run();
 
 		} finally {
 			in.close();
@@ -247,44 +258,4 @@ public class Peer implements Runnable {
 		}
 
 	}
-
-	@Override
-	public void run() {
-		try {
-			initialTalk();
-
-			String input = "";
-			if (role == 'S') {
-				// send torrent to the tracker
-				// TODO: ask peer to choose file
-				String path1 = "SharingFiles/article1.txt";
-				sendTorrent(socket, path1);
-				System.out.println("Torrent sent");
-
-			} else if (role == 'D') {
-				do {
-					System.out.println("Input must be \"SUMM\" or \"DATA\"");
-					input = in.nextLine();
-				} while (!input.equals("SUMM") && !input.equals("DATA"));
-				oos.writeObject(input);
-				if(input.equals("SUMM")) {
-					//TODO receive summary, save summary in global variable?
-					Torrent summary = null;
-					summary = (Torrent) ois.readObject();
-				} else {
-					//TODO receive data, also global?
-				}
-					
-			}
-
-			while (true) {
-				// run so the peer does not end with execution
-				// TODO 
-			}
-
-		} catch (Exception e) {
-			// TODO: handle exception
-		}
-	}
-
 }

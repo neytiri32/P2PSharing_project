@@ -25,7 +25,7 @@ public class Torrent implements Serializable {
 	public Torrent(File file, String fileName) {
 		try {
 			setSummary(file);
-			fileName = fileName;
+			this.fileName = fileName;
 		} catch (Exception e) {
 			e.printStackTrace();
 		}

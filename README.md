@@ -10,7 +10,6 @@
 	* [x] send hash
 	* [ ] send block by block and compare hash by hash
 	* [ ] Neighbor class that includes all information from peers: IP / port or remote object name, your bitmap of the blocks having, if you are downloading, the download rate if necessary, etc. .
-	* [ ] define message types using classes, which will facilitate the transport network
 	
 	** First part **
 		* All *

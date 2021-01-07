@@ -21,14 +21,20 @@ public class Torrent implements Serializable {
 	private ArrayList<byte[]> summary;
 	int size; 
 	String fileName = "";
+	int fileSize;
 
 	public Torrent(File file, String fileName) {
 		try {
 			setSummary(file);
 			this.fileName = fileName;
+			this.fileSize = (int) file.length();
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
+	}
+	
+	public int getFileSize() {
+		return fileSize;
 	}
 
 	public ArrayList<byte[]> getSummary() {

@@ -2,13 +2,13 @@ package peers;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
-import java.io.DataInputStream;
-import java.io.DataOutputStream;
+import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.OutputStream;
@@ -16,13 +16,21 @@ import java.io.RandomAccessFile;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.util.ArrayList;
+import java.util.BitSet;
+import java.util.Collections;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.Scanner;
+import java.util.SortedSet;
+import java.util.TreeSet;
 
 import hash.*;
 
+/**
+ * @author matea
+ *
+ */
 public class Peer {
 
 	Socket socket = null;
@@ -31,9 +39,17 @@ public class Peer {
 	Scanner in = new Scanner(System.in);
 
 	// list of other participants
-	Map<String, String> neighbours = new HashMap<String, String>();
+	Map<String, String> neighbors = new HashMap<String, String>();
+	// ID of neighbors and indexes of containing blocks
+	Map<String, BitSet> blocksOfNeighbors = new HashMap<String, BitSet>();
 
-	Torrent recivedTorrent = null;
+	BitSet ownedBlocks = null;
+	ArrayList<byte[]> blocksOfFile = null;
+
+	// for the blockSelection algorithm
+	ArrayList<Integer> rarityOfBlocks = null;
+
+	Torrent myTorrent = null;
 
 	// my access informations
 	String myIP = "";
@@ -50,24 +66,23 @@ public class Peer {
 
 	/**
 	 * !! Currently not used !! Sending file to other peer
-	 * 
+	 *
 	 * @param socket
 	 * @param path
 	 * @throws Exception
 	 */
+
+	// TODO send one bucket to peer
 	public void shareFile(Socket socket, String path) throws Exception {
 		File file = new File(path);
 
 		OutputStream os = socket.getOutputStream();
 		ObjectOutputStream oos = null;
 
-		Torrent summary = new Torrent(file, path.substring(path.lastIndexOf("/") + 1).trim());
-
 		byte[] bytearray = new byte[(int) file.length()];
 		System.out.println("Sending Size...");
 		oos = new ObjectOutputStream(socket.getOutputStream());
 		oos.writeObject(bytearray.length);
-		oos.writeObject(summary);
 
 		BufferedInputStream bin = new BufferedInputStream(new FileInputStream(file));
 		bin.read(bytearray, 0, bytearray.length);
@@ -89,12 +104,12 @@ public class Peer {
 	 * @return
 	 * @throws IOException
 	 */
-	private File allocateFileMemory(final String filename, final long sizeInBytes) throws IOException {
+	private File allocateFileMemory(final String filename) throws IOException {
 		File file = new File(filename);
 		file.createNewFile();
 
 		RandomAccessFile raf = new RandomAccessFile(file, "rw");
-		raf.setLength(sizeInBytes);
+		raf.setLength(myTorrent.getFileSize());
 		raf.close();
 
 		return file;
@@ -109,16 +124,18 @@ public class Peer {
 	 * @param summary
 	 * @throws Exception
 	 */
-	public void getFile(Socket socket, String path, int filesize, Torrent summary) throws Exception {
+
+	// TODO ovo je za download, ali radi samo s jednim blokom
+	public void getFile(Socket socket, String path, int blockSize) throws Exception {
 
 		int bytesRead;
 		int currentTot = 0;
 
-		byte[] bytearray = new byte[filesize];
+		byte[] bytearray = new byte[blockSize];
 		InputStream is = socket.getInputStream();
 
 		// allocate memory
-		File fo = allocateFileMemory(path, filesize);
+		File fo = allocateFileMemory(path);
 		BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(fo));
 
 		bytesRead = is.read(bytearray, 0, bytearray.length);
@@ -140,7 +157,7 @@ public class Peer {
 
 		Torrent mySummary = new Torrent(file, path.substring(path.lastIndexOf("/") + 1).trim());
 
-		if (!(mySummary.equals(summary))) {
+		if (!(mySummary.equals(myTorrent))) {
 			System.err.println("File is corrupted!");
 		} else {
 			System.out.println("File is not corrupted.");
@@ -167,7 +184,7 @@ public class Peer {
 		ObjectInputStream ois = new ObjectInputStream(socket.getInputStream());
 		filesize = (int) ois.readObject();
 		summary = (Torrent) ois.readObject();
-		getFile(socket, path, filesize, summary);
+		getFile(socket, path, filesize);
 
 	}
 
@@ -183,10 +200,56 @@ public class Peer {
 	public void sendTorrent(Socket socket, String path) throws Exception {
 		File file = new File(path);
 
-		Torrent summary = new Torrent(file, path.substring(path.lastIndexOf("/") + 1).trim());
-		oos.writeObject(summary);
+		// saving torrent into myTorrent variable
+		myTorrent = new Torrent(file, path.substring(path.lastIndexOf("/") + 1).trim());
+		oos.writeObject(myTorrent);
 		oos.flush();
 
+	}
+
+	/**
+	 * @param peerID
+	 * @return index of chosen block; if index is null, there is no block to choose
+	 */
+	public Integer blockSelection(String peerID) {
+
+		BitSet peerBitSet = blocksOfNeighbors.get(peerID);
+
+		int numOfShared = Integer.MAX_VALUE;
+		Integer index = null;
+		// iterate over the true bits in a BitSet
+		for (int i = peerBitSet.nextSetBit(0); i >= 0 && i < peerBitSet.length(); i = peerBitSet.nextSetBit(i + 1)) {
+			if (rarityOfBlocks.get(i) != 0 && rarityOfBlocks.get(i) < numOfShared) {
+				numOfShared = rarityOfBlocks.get(i);
+				index = i;
+			}
+		}
+		return index;
+	}
+
+	/**
+	 * @return maximum four IDs of chosen peers in TreeSet(without duplicates)
+	 */
+	public TreeSet<String> peerSelection() {
+		TreeSet<String> chosenPeers = new TreeSet<String>();
+		Object[] keys = neighbors.keySet().toArray();
+
+		int cnt = 0;
+
+		// choosing 4 peers
+		if (keys.length <= 4) {
+			for (int i = 0; i < keys.length; i++)
+				if (!blocksOfNeighbors.get(keys[i]).isEmpty()) // check does peer have something to share
+					chosenPeers.add((String) keys[i]);
+		} else {
+			do {
+				String randomID = (String) keys[new Random().nextInt(keys.length)];
+				if (!blocksOfNeighbors.get(randomID).isEmpty()) // check does peer have something to share
+					chosenPeers.add(randomID);
+				cnt++;
+			} while (chosenPeers.size() < 4 || cnt > 10); // max 10 iteration to avoid infinitive loop
+		}
+		return chosenPeers;
 	}
 
 	/**
@@ -218,23 +281,46 @@ public class Peer {
 				String recivedMsg = (String) obj;
 				System.out.println(recivedMsg);
 
-				// TODO choose file
-				sendTorrent(socket, "SharingFiles/article1.txt");
+				// choose file
+				File choosenFile = null;
+				String choosenPath = "";
+				do {
+					System.out.println("Please enter full path to the file.");
+					choosenPath = in.nextLine();
+					choosenFile = new File(choosenPath);
+				} while (!choosenFile.isFile());
+
+				sendTorrent(socket, choosenPath);
 				System.out.println("Torrent sent");
 
 				System.out.println("Tracker says: " + (String) ois.readObject());
+
+				// setting size of arrays
+				int torrentSize = myTorrent.getSize();
+				ownedBlocks = new BitSet(torrentSize);
+				blocksOfFile = new ArrayList<byte[]>(torrentSize);
+				// at the beginning, all zeros in the list
+				rarityOfBlocks = new ArrayList<Integer>(Collections.nCopies(torrentSize, 0));
 
 				// TODO thread listening to other peers connection
 
 			} else if (obj instanceof Torrent) {
 				// this peer is downloader
-				recivedTorrent = (Torrent) obj;
+				myTorrent = (Torrent) obj;
 				System.out.println("Torrent recived");
 
 				oos.writeObject("OK. \nPlease send me list of seeds");
 
-				neighbours = (HashMap<String, String>) ois.readObject(); // stops here and waits
+				neighbors = (HashMap<String, String>) ois.readObject(); // stops here and waits
 				System.out.println("List of seeds recived");
+
+				// setting size of arrays
+				int torrentSize = myTorrent.getSize();
+				ownedBlocks = new BitSet(torrentSize);
+				blocksOfFile = new ArrayList<byte[]>(torrentSize);
+
+				// at the beginning, all zeros in the list
+				rarityOfBlocks = new ArrayList<Integer>(Collections.nCopies(torrentSize, 0));
 
 				// TODO thread connect to wanted peers
 				// TODO thread listening to other peers connection
@@ -244,6 +330,7 @@ public class Peer {
 			while (true) {
 				Thread.sleep(1234678);
 			}
+
 		} finally {
 			in.close();
 			if (socket != null) {

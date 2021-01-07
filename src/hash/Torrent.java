@@ -22,15 +22,21 @@ public class Torrent implements Serializable {
 	int size; 
 	String fileName = "";
 	int fileSize;
+	String extension = ""; 
 
 	public Torrent(File file, String fileName) {
 		try {
 			setSummary(file);
 			this.fileName = fileName;
 			this.fileSize = (int) file.length();
+			this.extension = fileName.substring(fileName.lastIndexOf(".") + 1).trim();
 		} catch (Exception e) {
 			e.printStackTrace();
 		}
+	}
+	
+	public String getExtension() {
+		return extension;
 	}
 	
 	public int getFileSize() {

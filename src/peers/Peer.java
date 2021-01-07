@@ -3,6 +3,7 @@ package peers;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
+import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -14,11 +15,13 @@ import java.io.ObjectOutputStream;
 import java.io.OutputStream;
 import java.io.RandomAccessFile;
 import java.net.InetAddress;
+import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.Map;
 import java.util.Random;
 import java.util.Scanner;
@@ -65,39 +68,7 @@ public class Peer {
 	}
 
 	/**
-	 * !! Currently not used !! Sending file to other peer
-	 *
-	 * @param socket
-	 * @param path
-	 * @throws Exception
-	 */
-
-	// TODO send one bucket to peer
-	public void shareFile(Socket socket, String path) throws Exception {
-		File file = new File(path);
-
-		OutputStream os = socket.getOutputStream();
-		ObjectOutputStream oos = null;
-
-		byte[] bytearray = new byte[(int) file.length()];
-		System.out.println("Sending Size...");
-		oos = new ObjectOutputStream(socket.getOutputStream());
-		oos.writeObject(bytearray.length);
-
-		BufferedInputStream bin = new BufferedInputStream(new FileInputStream(file));
-		bin.read(bytearray, 0, bytearray.length);
-
-		System.out.println("Sending Files...");
-		os.write(bytearray, 0, bytearray.length);
-		os.flush();
-
-		bin.close();
-
-	}
-
-	/**
-	 * !! Currently not used !! For allocating memory when receiving file from other
-	 * peer
+	 * For allocating memory when receiving file
 	 * 
 	 * @param filename
 	 * @param sizeInBytes
@@ -116,7 +87,6 @@ public class Peer {
 	}
 
 	/**
-	 * !! Currently not used !!
 	 * 
 	 * @param socket
 	 * @param path
@@ -125,32 +95,27 @@ public class Peer {
 	 * @throws Exception
 	 */
 
-	// TODO ovo je za download, ali radi samo s jednim blokom
-	public void getFile(Socket socket, String path, int blockSize) throws Exception {
-
-		int bytesRead;
-		int currentTot = 0;
-
-		byte[] bytearray = new byte[blockSize];
-		InputStream is = socket.getInputStream();
+	public void getFile() throws Exception {
+		
+		String path = "SharingFiles/recivedFile_" + myID + myTorrent.getExtension();
 
 		// allocate memory
 		File fo = allocateFileMemory(path);
+		
 		BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(fo));
+		
+		try {
+			for (int i = 0; i < blocksOfFile.size(); i++) {
+				byte[] buffer = blocksOfFile.get(i);
 
-		bytesRead = is.read(bytearray, 0, bytearray.length);
-
-		currentTot = bytesRead;
-		do {
-			bytesRead = is.read(bytearray, currentTot, (bytearray.length - currentTot));
-			if (bytesRead >= 0) {
-				currentTot += bytesRead;
+				// save the block, assumes buffer is the exact size of the block
+				bos.write(buffer, 0, buffer.length);
 			}
-		} while (bytesRead > 0);
-		bos.write(bytearray, 0, currentTot);
-
-		bos.flush();
-		bos.close();
+			bos.flush();
+		} finally {
+			bos.close();
+		}
+		
 
 		// make hash from a file -> compare
 		File file = new File(path);
@@ -166,38 +131,13 @@ public class Peer {
 	}
 
 	/**
-	 * !! Currently not used !!
-	 * 
-	 * TODO For receiving file from other shocker
-	 * reciveFile()->getFile()->allocateMemmory()
-	 * 
-	 * @param socket
-	 * @throws Exception
-	 */
-	public void reciveFile(Socket socket) throws Exception {
-		// Receive file
-		int filesize;
-		Torrent summary = null;
-		String path = "SharingFiles/recivedFile_" + myID + ".txt";
-		ArrayList<String> sharingFiles = new ArrayList<String>();
-		sharingFiles.add(path);
-		ObjectInputStream ois = new ObjectInputStream(socket.getInputStream());
-		filesize = (int) ois.readObject();
-		summary = (Torrent) ois.readObject();
-		getFile(socket, path, filesize);
-
-	}
-
-	// active code
-
-	/**
 	 * Sending summary to the tracker
 	 * 
 	 * @param socket
 	 * @param path
 	 * @throws Exception
 	 */
-	public void sendTorrent(Socket socket, String path) throws Exception {
+	public void sendTorrent(String path) throws Exception {
 		File file = new File(path);
 
 		// saving torrent into myTorrent variable
@@ -290,7 +230,7 @@ public class Peer {
 					choosenFile = new File(choosenPath);
 				} while (!choosenFile.isFile());
 
-				sendTorrent(socket, choosenPath);
+				sendTorrent(choosenPath);
 				System.out.println("Torrent sent");
 
 				System.out.println("Tracker says: " + (String) ois.readObject());
@@ -302,7 +242,9 @@ public class Peer {
 				// at the beginning, all zeros in the list
 				rarityOfBlocks = new ArrayList<Integer>(Collections.nCopies(torrentSize, 0));
 
-				// TODO thread listening to other peers connection
+				// thread listening to other peers connection
+				Thread sendingFileHandeler = new SendingFileHandeler(myPort, blocksOfFile);
+				sendingFileHandeler.start();
 
 			} else if (obj instanceof Torrent) {
 				// this peer is downloader
@@ -322,8 +264,56 @@ public class Peer {
 				// at the beginning, all zeros in the list
 				rarityOfBlocks = new ArrayList<Integer>(Collections.nCopies(torrentSize, 0));
 
-				// TODO thread connect to wanted peers
-				// TODO thread listening to other peers connection
+				// thread connect to wanted peers
+				Thread receivingFileHandeler = new Thread() {
+
+					@Override
+					public void run() {
+						try {
+
+							TreeSet<String> wantedPeers = peerSelection();
+							ObjectOutputStream objectOutput;
+							ObjectInputStream objectInput;
+							Socket connectingSocket;
+
+							for (String id : wantedPeers) {
+								String[] data = neighbors.get(id).split(":");
+								connectingSocket = new Socket(data[0], Integer.parseInt(data[1]));
+								objectOutput = new ObjectOutputStream(socket.getOutputStream());
+								objectInput = new ObjectInputStream(socket.getInputStream());
+
+								// sending wanted block id
+								int wantedBlockIndex = blockSelection(id);
+								objectOutput.writeObject(wantedBlockIndex);
+								// Receiving wanted block
+								blocksOfFile.set(wantedBlockIndex, (byte[]) objectInput.readObject());
+							}
+
+						} catch (NumberFormatException | IOException e) {
+							e.printStackTrace();
+						} catch (ClassNotFoundException e) {
+							e.printStackTrace();
+						}
+
+						if (ownedBlocks.nextClearBit(0) >= torrentSize) {
+							// this peer received all the blocks
+							try {
+								getFile();
+							} catch (Exception e) {
+								e.printStackTrace();
+							}
+
+							return;
+						}
+
+					}
+
+				};
+				receivingFileHandeler.start();
+
+				// thread listening to other peers connection
+				Thread sendingFileHandeler = new SendingFileHandeler(myPort, blocksOfFile);
+				sendingFileHandeler.start();
 
 			}
 
@@ -331,7 +321,9 @@ public class Peer {
 				Thread.sleep(1234678);
 			}
 
-		} finally {
+		} finally
+
+		{
 			in.close();
 			if (socket != null) {
 				// Inform the tracker when they leave the swarm.

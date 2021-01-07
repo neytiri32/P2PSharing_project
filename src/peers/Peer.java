@@ -238,6 +238,10 @@ public class Peer {
 				// setting size of arrays
 				int torrentSize = myTorrent.getSize();
 				ownedBlocks = new BitSet(torrentSize);
+				//initialy all on 1
+				for (int i = 0; i < torrentSize; i++)
+					ownedBlocks.set(i);
+				
 				blocksOfFile = new ArrayList<byte[]>(torrentSize);
 				// at the beginning, all zeros in the list
 				rarityOfBlocks = new ArrayList<Integer>(Collections.nCopies(torrentSize, 0));
@@ -287,6 +291,7 @@ public class Peer {
 								objectOutput.writeObject(wantedBlockIndex);
 								// Receiving wanted block
 								blocksOfFile.set(wantedBlockIndex, (byte[]) objectInput.readObject());
+								ownedBlocks.set(wantedBlockIndex);
 							}
 
 						} catch (NumberFormatException | IOException e) {
